@@ -47,6 +47,15 @@ export default function VendorTabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="OrderStatusUpdate"
+        options={{
+          title: 'Orders',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="list-outline" color={color} size={size} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

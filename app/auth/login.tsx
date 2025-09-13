@@ -8,27 +8,29 @@ export default function Login() {
   const [password, setPassword] = useState('');
 
   const handleLogin = async () => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      // 1️⃣ Authenticate with Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      Alert.alert('Login Error', error.message);
-      return;
+      if (error) throw error;
+      const user = data.user;
+      if (!user) throw new Error('No user found.');
+
+      // 2️⃣ Read role from user_metadata and normalize
+      const role = user.user_metadata?.role?.toLowerCase();
+      if (!role) throw new Error('Role not found for this user.');
+
+      // 3️⃣ Redirect based on role
+      if (role === 'vendor') router.replace('/vendor/(tabs)/vendor-dashboard');
+      else if (role === 'deliverer') router.replace('/deliverer/tabs/deliverer-dashboard');
+      else throw new Error('Role not recognized.');
+
+    } catch (err: any) {
+      Alert.alert('Login Error', err.message);
     }
-
-    const user = data.user;
-    const role = user?.user_metadata?.role;
-
-    if (!role) {
-      Alert.alert('Error', 'Role not found for this user.');
-      return;
-    }
-
-    if (role === 'Vendor') router.push('/vendor/(tabs)/vendor-dashboard');
-    else if (role === 'Deliverer') router.push('/deliverer/tabs/deliverer-dashboard');
-    else Alert.alert('Error', 'Role not recognized');
   };
 
   return (
@@ -40,6 +42,8 @@ export default function Login() {
         style={styles.input}
         placeholder="Enter your email"
         placeholderTextColor="#999"
+        autoCapitalize="none"
+        keyboardType="email-address"
       />
 
       <Text style={styles.label}>Password</Text>
@@ -54,17 +58,11 @@ export default function Login() {
 
       <Button title="Login" onPress={handleLogin} />
 
-      <Text
-        style={styles.link}
-        onPress={() => router.push('/auth/signup')}
-      >
+      <Text style={styles.link} onPress={() => router.push('/auth/signup')}>
         Don't have an account? Sign Up
       </Text>
 
-      <Text
-        style={styles.linkAlt}
-        onPress={() => router.push('/auth/apply')}
-      >
+      <Text style={styles.linkAlt} onPress={() => router.push('/auth/apply')}>
         Want to join as a Vendor or Deliverer? Apply here
       </Text>
     </View>
@@ -72,36 +70,9 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 5,
-    color: '#000',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    marginBottom: 15,
-    padding: 10,
-    borderRadius: 5,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
-  },
-  link: {
-    marginTop: 15,
-    textAlign: 'center',
-    color: '#007BFF',
-  },
-  linkAlt: {
-    marginTop: 10,
-    textAlign: 'center',
-    color: '#28a745', // green link
-    fontWeight: '600',
-  },
+  container: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: '#fff' },
+  label: { fontSize: 16, fontWeight: '600', marginBottom: 5, color: '#000' },
+  input: { borderWidth: 1, borderColor: '#ccc', marginBottom: 15, padding: 10, borderRadius: 5, color: '#000', backgroundColor: '#f9f9f9' },
+  link: { marginTop: 15, textAlign: 'center', color: '#007BFF' },
+  linkAlt: { marginTop: 10, textAlign: 'center', color: '#28a745', fontWeight: '600' },
 });
