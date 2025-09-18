@@ -12,6 +12,7 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>('Vendor');
   const [vendorName, setVendorName] = useState(''); // For Vendor business name
+  const [fullName, setFullName] = useState('');     // For all users
 
   const handleSignup = async () => {
     try {
@@ -27,10 +28,14 @@ export default function Signup() {
 
       const userId = authData.user.id;
 
-      // 2️⃣ Insert role into profiles table
+      // 2️⃣ Insert user data into profiles table
       const { error: profileError } = await supabase
         .from('profiles')
-        .insert([{ id: userId, role: role.toLowerCase() }]);
+        .insert([{ 
+          id: userId, 
+          role: role.toLowerCase(), 
+          full_name: fullName 
+        }]);
       if (profileError) throw profileError;
 
       // 3️⃣ Insert into vendors table ONLY if role is Vendor
@@ -62,6 +67,15 @@ export default function Signup() {
         onChangeText={setEmail}
         style={styles.input}
         placeholder="Enter your email"
+        placeholderTextColor="#999"
+      />
+
+      <Text style={styles.label}>Full Name</Text>
+      <TextInput
+        value={fullName}
+        onChangeText={setFullName}
+        style={styles.input}
+        placeholder="Enter your full name"
         placeholderTextColor="#999"
       />
 

@@ -20,24 +20,47 @@ interface Props {
 
 const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [view, setView] = useState<'Order' | 'Preparing'>('Order');
+  const [view, setView] = useState<'Order' | 'Preparing' | 'Ready'>('Order');
 
   // Fetch orders
-  const fetchOrders = async () => {
-    try {
-      let query = supabase.from('orders').select('*');
-
-      if (userRole === 'Vendor') query = query.eq('vendor_id', userId);
-      else if (userRole === 'Deliverer') query = query.eq('deliverer_id', userId);
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      setOrders(data as Order[]);
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
+  // Fetch orders
+const fetchOrders = async () => {
+  try {
+    // Get the current authenticated user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      Alert.alert('Error', 'Not logged in');
+      return;
     }
-  };
+
+    // Find the vendor record that matches this logged-in user
+    const { data: vendorData, error: vendorError } = await supabase
+      .from('vendors')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (vendorError || !vendorData) {
+      Alert.alert('Error', 'Vendor record not found');
+      return;
+    }
+
+    // Now vendorData.id is the actual vendor_id in orders table
+    let query = supabase.from('orders').select('*');
+    query = query.eq('vendor_id', vendorData.id);
+    
+    // Exclude completed orders (they belong in History screen)
+    query = query.neq('status', 'Completed');
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    setOrders(data as Order[]);
+  } catch (err: any) {
+    Alert.alert('Error', err.message);
+  }
+};
+
 
   useEffect(() => {
     fetchOrders();
@@ -49,10 +72,30 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
-          const updatedOrder = payload.new as Order;
-          setOrders((prev) =>
-            prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
-          );
+          const newOrder = payload.new as Order;
+          const oldOrder = payload.old as Order;
+
+          setOrders((prev) => {
+            switch (payload.eventType) {
+              case 'INSERT':
+                // Only add if not completed
+                return newOrder.status !== 'Completed'
+                  ? [newOrder, ...prev]
+                  : prev;
+              case 'UPDATE':
+                // If updated to Completed, remove from active list
+                if (newOrder.status === 'Completed') {
+                  return prev.filter((o) => o.id !== newOrder.id);
+                }
+                return prev.map((o) =>
+                  o.id === newOrder.id ? newOrder : o
+                );
+              case 'DELETE':
+                return prev.filter((o) => o.id !== oldOrder.id);
+              default:
+                return prev;
+            }
+          });
         }
       )
       .subscribe();
@@ -76,28 +119,44 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
     }
   };
 
-  // Accept / Decline an order (optimistic frontend update)
+  // Accept / Decline an order
   const handleAccept = async (orderId: string) => {
-    // Optimistically move order to Preparing
     setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId ? { ...o, status: 'Preparing' } : o
-      )
+      prev.map((o) => (o.id === orderId ? { ...o, status: 'Preparing' } : o))
     );
     await updateOrderStatus(orderId, 'Preparing');
   };
 
   const handleDecline = async (orderId: string) => {
-    // Optimistically remove order from current list
     setOrders((prev) => prev.filter((o) => o.id !== orderId));
     await updateOrderStatus(orderId, 'Declined');
   };
 
+  // Handle status transitions (Preparing -> Ready -> Completed)
+  const handleStatusChange = async (orderId: string, newStatus: string) => {
+    // If completed, remove immediately from active list
+    if (newStatus === 'Completed') {
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } else {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+      );
+    }
+    await updateOrderStatus(orderId, newStatus);
+  };
+
   // Filter orders based on current view
   const filteredOrders = orders.filter((order) => {
-    if (view === 'Order') return order.status === 'Pending';
-    if (view === 'Preparing') return order.status === 'Preparing';
-    return false;
+    switch (view) {
+      case 'Order':
+        return order.status === 'Pending';
+      case 'Preparing':
+        return order.status === 'Preparing';
+      case 'Ready':
+        return order.status === 'Ready';
+      default:
+        return false;
+    }
   });
 
   const renderItem = ({ item }: { item: Order }) => (
@@ -106,11 +165,24 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
       <Text>Status: {item.status}</Text>
       <Text>Total: ₱{item.total_price}</Text>
 
-      {view === 'Order' && (
+      {/* Buttons depending on status */}
+      {item.status === 'Pending' && view === 'Order' && (
         <View style={styles.buttonRow}>
           <Button title="Accept" onPress={() => handleAccept(item.id)} />
           <Button title="Decline" color="red" onPress={() => handleDecline(item.id)} />
         </View>
+      )}
+      {item.status === 'Preparing' && view === 'Preparing' && (
+        <Button
+          title="Mark Ready"
+          onPress={() => handleStatusChange(item.id, 'Ready')}
+        />
+      )}
+      {item.status === 'Ready' && view === 'Ready' && (
+        <Button
+          title="Complete"
+          onPress={() => handleStatusChange(item.id, 'Completed')}
+        />
       )}
     </View>
   );
@@ -119,7 +191,7 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
     <View style={styles.container}>
       <Text style={styles.title}>Orders</Text>
 
-      {/* Toggle between Pending and Preparing */}
+      {/* Toggle between views */}
       <View style={styles.tabRow}>
         <TouchableOpacity
           style={[styles.tabButton, view === 'Order' && styles.activeTab]}
@@ -132,6 +204,12 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
           onPress={() => setView('Preparing')}
         >
           <Text style={styles.tabText}>Preparing</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, view === 'Ready' && styles.activeTab]}
+          onPress={() => setView('Ready')}
+        >
+          <Text style={styles.tabText}>Ready</Text>
         </TouchableOpacity>
       </View>
 
