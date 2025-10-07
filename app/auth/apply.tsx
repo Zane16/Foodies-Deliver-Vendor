@@ -20,7 +20,7 @@ import {
 import { supabase } from '../../supabaseClient';
 
 // Configuration - Use environment variable in production
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.148:3000';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://foodies-36h92bu6x-zane16s-projects.vercel.app';
 
 // File size limit (5MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
