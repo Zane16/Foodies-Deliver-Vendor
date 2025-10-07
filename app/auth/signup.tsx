@@ -28,24 +28,32 @@ export default function Signup() {
 
       const userId = authData.user.id;
 
-      // 2️⃣ Insert user data into profiles table
+      // 2️⃣ Insert user data into profiles table (NOW includes status)
       const { error: profileError } = await supabase
         .from('profiles')
         .insert([{ 
           id: userId, 
           role: role.toLowerCase(), 
-          full_name: fullName 
+          full_name: fullName,
+          status: role.toLowerCase() === 'vendor' || role.toLowerCase() === 'deliverer'
+            ? 'pending'
+            : 'approved' // fallback if ever adding customers later
         }]);
       if (profileError) throw profileError;
 
-      // 3️⃣ Insert into vendors table ONLY if role is Vendor
+      // 3️⃣ Insert into vendors table ONLY if role is Vendor (NOW includes status)
       if (role.toLowerCase() === 'vendor') {
         if (!vendorName) return Alert.alert('Error', 'Please enter your business name.');
 
         // ✅ Minimal RLS-safe insertion
         const { error: vendorError } = await supabase
           .from('vendors')
-          .insert([{ id: userId, name: vendorName }]);
+          .insert([{ 
+            id: userId, 
+            name: vendorName,
+            auth_user_id: userId,
+            status: 'pending'
+          }]);
         if (vendorError) throw vendorError;
       }
 
