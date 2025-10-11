@@ -16,7 +16,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.zane_16.vendordelivererapp"
     },
     "web": {
       "bundler": "metro",
@@ -39,6 +40,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7a2488be-f095-407f-a880-e154b4a4ab28"
+      }
     }
   }
 }

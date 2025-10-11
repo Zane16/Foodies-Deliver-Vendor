@@ -78,24 +78,15 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
         return;
       }
 
-      // Find the vendor record that matches this logged-in user
-      const { data: vendorData, error: vendorError } = await supabase
-        .from('vendors')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .single();
+      // In new schema: vendor.id = user.id (vendor IS a profile)
+      const vendorId = user.id;
 
-      if (vendorError || !vendorData) {
-        Alert.alert('Error', 'Vendor record not found');
-        return;
-      }
-
-      // Now vendorData.id is the actual vendor_id in orders table
+      // Fetch orders for this vendor
       let query = supabase.from('orders').select('*');
-      query = query.eq('vendor_id', vendorData.id);
+      query = query.eq('vendor_id', vendorId);
       
       // Exclude completed orders (they belong in History screen)
-      query = query.neq('status', 'Completed');
+      query = query.neq('status', 'completed');
 
       const { data, error } = await query;
       if (error) throw error;
@@ -123,12 +114,12 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
             switch (payload.eventType) {
               case 'INSERT':
                 // Only add if not completed
-                return newOrder.status !== 'Completed'
+                return newOrder.status !== 'completed'
                   ? [newOrder, ...prev]
                   : prev;
               case 'UPDATE':
-                // If updated to Completed, remove from active list
-                if (newOrder.status === 'Completed') {
+                // If updated to completed, remove from active list
+                if (newOrder.status === 'completed') {
                   return prev.filter((o) => o.id !== newOrder.id);
                 }
                 return prev.map((o) =>
@@ -166,20 +157,20 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
   // Accept / Decline an order
   const handleAccept = async (orderId: string) => {
     setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'Preparing' } : o))
+      prev.map((o) => (o.id === orderId ? { ...o, status: 'preparing' } : o))
     );
-    await updateOrderStatus(orderId, 'Preparing');
+    await updateOrderStatus(orderId, 'preparing');
   };
 
   const handleDecline = async (orderId: string) => {
     setOrders((prev) => prev.filter((o) => o.id !== orderId));
-    await updateOrderStatus(orderId, 'Declined');
+    await updateOrderStatus(orderId, 'cancelled');
   };
 
-  // Handle status transitions (Preparing -> Ready -> Completed)
+  // Handle status transitions (preparing -> ready -> completed)
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     // If completed, remove immediately from active list
-    if (newStatus === 'Completed') {
+    if (newStatus === 'completed') {
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
     } else {
       setOrders((prev) =>
@@ -193,11 +184,11 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
   const filteredOrders = orders.filter((order) => {
     switch (view) {
       case 'Order':
-        return order.status === 'Pending';
+        return order.status === 'pending';
       case 'Preparing':
-        return order.status === 'Preparing';
+        return order.status === 'preparing';
       case 'Ready':
-        return order.status === 'Ready';
+        return order.status === 'ready';
       default:
         return false;
     }
@@ -219,17 +210,17 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
         </View>
         <View style={[
           styles.statusBadge,
-          item.status === 'Pending' && styles.statusPending,
-          item.status === 'Preparing' && styles.statusPreparing,
-          item.status === 'Ready' && styles.statusReady,
+          item.status === 'pending' && styles.statusPending,
+          item.status === 'preparing' && styles.statusPreparing,
+          item.status === 'ready' && styles.statusReady,
         ]}>
           <Text style={[
             styles.statusText,
-            item.status === 'Pending' && styles.statusTextPending,
-            item.status === 'Preparing' && styles.statusTextPreparing,
-            item.status === 'Ready' && styles.statusTextReady,
+            item.status === 'pending' && styles.statusTextPending,
+            item.status === 'preparing' && styles.statusTextPreparing,
+            item.status === 'ready' && styles.statusTextReady,
           ]}>
-            {item.status}
+            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
           </Text>
         </View>
       </View>
@@ -252,7 +243,7 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
       </View>
   
       {/* Buttons depending on status */}
-      {item.status === 'Pending' && view === 'Order' && (
+      {item.status === 'pending' && view === 'Order' && (
         <View style={styles.actionButtons}>
           <TouchableOpacity 
             style={styles.declineButton}
@@ -268,18 +259,18 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
           </TouchableOpacity>
         </View>
       )}
-      {item.status === 'Preparing' && view === 'Preparing' && (
+      {item.status === 'preparing' && view === 'Preparing' && (
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => handleStatusChange(item.id, 'Ready')}
+          onPress={() => handleStatusChange(item.id, 'ready')}
         >
           <Text style={styles.primaryButtonText}>Mark as Ready</Text>
         </TouchableOpacity>
       )}
-      {item.status === 'Ready' && view === 'Ready' && (
+      {item.status === 'ready' && view === 'Ready' && (
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => handleStatusChange(item.id, 'Completed')}
+          onPress={() => handleStatusChange(item.id, 'completed')}
         >
           <Text style={styles.primaryButtonText}>Complete Order</Text>
         </TouchableOpacity>

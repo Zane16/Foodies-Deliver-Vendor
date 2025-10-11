@@ -82,25 +82,15 @@ export default function VendorMenu() {
           return;
         }
 
-        // Get the vendor record
-        const { data: vendorRecord, error: vendorError } = await supabase
-          .from('vendors')
-          .select('id')
-          .eq('auth_user_id', user.id)
-          .single();
-        
-        if (vendorError) throw vendorError;
-        if (!vendorRecord) {
-          throw new Error('Vendor record not found');
-        }
-
-        setVendorId(vendorRecord.id);
+        // In new schema: vendor.id = user.id (vendor IS a profile)
+        const vendorId = user.id;
+        setVendorId(vendorId);
         
         // Fetch categories from database
         const { data: categoriesData, error: categoriesError } = await supabase
           .from('categories')
           .select('id, name')
-          .eq('vendor_id', vendorRecord.id)
+          .eq('vendor_id', vendorId)
           .order('name');
 
         if (categoriesError) throw categoriesError;
@@ -110,7 +100,7 @@ export default function VendorMenu() {
 
         // Fetch menu items with their categories
         const { data: menuData, error: menuError } = await supabase
-          .from('menuitems')
+          .from('menu_items')
           .select(`
             *,
             categories (
@@ -118,7 +108,7 @@ export default function VendorMenu() {
               name
             )
           `)
-          .eq('vendor_id', vendorRecord.id)
+          .eq('vendor_id', vendorId)
           .order('created_at', { ascending: false });
 
         if (menuError) throw menuError;
@@ -245,7 +235,7 @@ export default function VendorMenu() {
         image_url,
       };
 
-      const { error: insertError } = await supabase.from('menuitems').insert([rowToInsert]);
+      const { error: insertError } = await supabase.from('menu_items').insert([rowToInsert]);
       if (insertError) throw insertError;
 
       Alert.alert('Success!', 'Food item added successfully!');
@@ -271,7 +261,7 @@ export default function VendorMenu() {
     if (!vendorId) return;
     try {
       const { data, error } = await supabase
-        .from('menuitems')
+        .from('menu_items')
         .select(`
           *,
           categories (
@@ -315,7 +305,7 @@ export default function VendorMenu() {
           onPress: async () => {
             try {
               const { error } = await supabase
-                .from('menuitems')
+                .from('menu_items')
                 .delete()
                 .eq('id', id);
 
@@ -331,9 +321,14 @@ export default function VendorMenu() {
   };
 
   // Filter menu by category
-  const filteredMenu = selectedCategory === 'All' 
-    ? menu 
+  const filteredMenu = selectedCategory === 'All'
+    ? menu
     : menu.filter(item => item.category_id === selectedCategory);
+
+  // Get the selected category name for display
+  const selectedCategoryName = selectedCategory === 'All'
+    ? 'All'
+    : categories.find(cat => cat.id === selectedCategory)?.name || 'Unknown';
 
   if (isLoading) {
     return (
@@ -346,7 +341,7 @@ export default function VendorMenu() {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
@@ -358,8 +353,8 @@ export default function VendorMenu() {
 
         {/* Category Filter */}
         <View style={styles.categorySection}>
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.categoryScrollContent}
           >
@@ -378,7 +373,7 @@ export default function VendorMenu() {
                 All
               </Text>
             </TouchableOpacity>
-            
+
             {categories.map((category) => (
               <TouchableOpacity
                 key={category.id}
@@ -411,7 +406,7 @@ export default function VendorMenu() {
           <View style={styles.emptyState}>
             <Ionicons name="restaurant-outline" size={64} color={Colors.light.icon} />
             <Text style={styles.emptyStateTitle}>
-              {selectedCategory === 'All' ? 'No menu items yet' : `No items in ${selectedCategory}`}
+              {selectedCategory === 'All' ? 'No menu items yet' : `No items in "${selectedCategoryName}"`}
             </Text>
             <Text style={styles.emptyStateText}>
               {selectedCategory === 'All' ? 'Add your first food item!' : 'Try selecting another category'}

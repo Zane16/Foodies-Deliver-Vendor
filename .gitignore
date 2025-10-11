@@ -37,3 +37,13 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# Claude files
+CLAUDE.md
+SCHEMA_MIGRATION_SUMMARY.md
+*.claude.md
+claude-*
+.claude/
+
+# Claude Code artifacts
+schema-enhancements.sql

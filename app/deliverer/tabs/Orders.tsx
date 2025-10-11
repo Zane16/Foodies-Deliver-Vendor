@@ -1,3 +1,4 @@
+import { router } from "expo-router"; // Import router from expo-router
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,10 +23,9 @@ interface Order {
   }>;
 }
 
-// Define your color palette to match the design system
 const Colors = {
   light: {
-    background: '#FAFAFA',
+    background: '#F5F5F5',
     surface: '#FFFFFF',
     primary: '#E91E63',
     primaryLight: '#FCE4EC',
@@ -43,11 +43,11 @@ const Colors = {
   }
 };
 
+// Remove navigation prop since we're using Expo Router
 const AvailableOrders = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'Ready' | 'Accepted' | 'PickedUp'>('Ready');
 
   useEffect(() => {
     const getUser = async () => {
@@ -58,11 +58,9 @@ const AvailableOrders = () => {
         setUser(data.user);
       }
     };
-
     getUser();
   }, []);
 
-  // fetch available orders
   const fetchOrders = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -72,9 +70,9 @@ const AvailableOrders = () => {
         status,
         total_price,
         created_at,
-        customer:profiles!fk_orders_customer(full_name)
+        customer:profiles!orders_customer_id_fkey(full_name)
       `)
-      .in("status", ["Ready", "Accepted by Deliverer", "Picked Up"]);
+      .in("status", ["ready", "accepted", "on_the_way"]);
 
     if (error) {
       console.error("Fetch error:", error.message);
@@ -87,8 +85,6 @@ const AvailableOrders = () => {
 
   useEffect(() => {
     fetchOrders();
-
-    // ✅ Subscribe to real-time changes
     const channel = supabase
       .channel("orders-channel")
       .on(
@@ -99,7 +95,7 @@ const AvailableOrders = () => {
           table: "orders",
         },
         () => {
-          fetchOrders(); // refresh list on changes
+          fetchOrders();
         }
       )
       .subscribe();
@@ -109,40 +105,37 @@ const AvailableOrders = () => {
     };
   }, []);
 
-  // accept order
   const acceptOrder = async (orderId: string) => {
     if (!user) {
       Alert.alert("Error", "You must be logged in first");
       return;
     }
-  
-    // 🔍 Fetch role from profiles
+
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
-  
+
     if (profileError || !profile) {
       Alert.alert("Error", "Could not fetch user role");
       return;
     }
-  
+
     if (profile.role !== "deliverer") {
       Alert.alert("Error", "You must be logged in as a Deliverer");
       return;
     }
-  
-    // ✅ Update the order
+
     const { error } = await supabase
       .from("orders")
       .update({
         deliverer_id: user.id,
-        status: "Accepted by Deliverer",
+        status: "accepted",
       })
       .eq("id", orderId)
-      .is("deliverer_id", null); // prevent double-claim
-  
+      .is("deliverer_id", null);
+
     if (error) {
       Alert.alert("Error", error.message);
     } else {
@@ -150,41 +143,6 @@ const AvailableOrders = () => {
       fetchOrders();
     }
   };
-
-  // ✨ Update order status
-  const updateOrderStatus = async (orderId: string, newStatus: string) => {
-    if (!user) {
-      Alert.alert("Error", "You must be logged in first");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("orders")
-      .update({ status: newStatus })
-      .eq("id", orderId)
-      .eq("deliverer_id", user.id); // ✅ only this deliverer can update
-
-    if (error) {
-      Alert.alert("Error", error.message);
-    } else {
-      Alert.alert("Success", `Order marked as ${newStatus}`);
-      fetchOrders();
-    }
-  };
-
-  // Filter orders based on view
-  const filteredOrders = orders.filter((order) => {
-    switch (view) {
-      case 'Ready':
-        return order.status === 'Ready';
-      case 'Accepted':
-        return order.status === 'Accepted by Deliverer';
-      case 'PickedUp':
-        return order.status === 'Picked Up';
-      default:
-        return false;
-    }
-  });
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
@@ -197,73 +155,84 @@ const AvailableOrders = () => {
     });
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'ready':
+        return Colors.light.success;
+      case 'accepted':
+        return Colors.light.info;
+      case 'on_the_way':
+        return Colors.light.warning;
+      default:
+        return Colors.light.textSecondary;
+    }
+  };
+
   const renderOrderCard = ({ item }: { item: Order }) => (
     <View style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <View>
-          <Text style={styles.orderId}>Order #{item.id.slice(0, 8)}</Text>
-          {item.created_at && (
-            <Text style={styles.orderDate}>{formatDate(item.created_at)}</Text>
-          )}
+      {/* Header with customer name and status */}
+      <View style={styles.cardHeader}>
+        <View style={styles.customerSection}>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>
+              {item.customer?.[0]?.full_name?.charAt(0).toUpperCase() || '?'}
+            </Text>
+          </View>
+          <View style={styles.customerInfo}>
+            <Text style={styles.customerName}>
+              {item.customer?.[0]?.full_name || 'Unknown Customer'}
+            </Text>
+            <Text style={styles.orderTime}>{formatDate(item.created_at)}</Text>
+          </View>
         </View>
-        <View style={[
-          styles.statusBadge,
-          item.status === 'Ready' && styles.statusReady,
-          item.status === 'Accepted by Deliverer' && styles.statusAccepted,
-          item.status === 'Picked Up' && styles.statusPickedUp,
-        ]}>
-          <Text style={[
-            styles.statusText,
-            item.status === 'Ready' && styles.statusTextReady,
-            item.status === 'Accepted by Deliverer' && styles.statusTextAccepted,
-            item.status === 'Picked Up' && styles.statusTextPickedUp,
-          ]}>
-            {item.status === 'Accepted by Deliverer' ? 'ACCEPTED' : item.status.toUpperCase()}
+        <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+      </View>
+
+      {/* Order summary */}
+      <View style={styles.orderSummary}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Order ID</Text>
+          <Text style={styles.summaryValue}>#{item.id.slice(0, 8)}</Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Total</Text>
+          <Text style={styles.priceText}>₱{item.total_price.toFixed(2)}</Text>
+        </View>
+      </View>
+
+      {/* Status badge */}
+      <View style={styles.statusBadgeContainer}>
+        <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(item.status)}15` }]}>
+          <View style={[styles.statusDotSmall, { backgroundColor: getStatusColor(item.status) }]} />
+          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+            {item.status === 'on_the_way' ? 'On the Way' : item.status.charAt(0).toUpperCase() + item.status.slice(1)}
           </Text>
         </View>
       </View>
 
-      <View style={styles.divider} />
-
-      <View style={styles.customerInfo}>
-        <Text style={styles.customerLabel}>👤 Customer</Text>
-        <Text style={styles.customerName}>
-          {item.customer?.[0]?.full_name || 'Unknown Customer'}
-        </Text>
+      {/* Action buttons */}
+      <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={styles.detailsButton}
+          onPress={() => {
+            // Use router.push for Expo Router navigation
+            router.push({
+              pathname: '/deliverer/tabs/OrderDetails',
+              params: { orderId: item.id }
+            });
+          }}
+        >
+          <Text style={styles.detailsButtonText}>View Details</Text>
+        </TouchableOpacity>
+        {item.status === "ready" && (
+          <TouchableOpacity
+            style={styles.acceptButton}
+            onPress={() => acceptOrder(item.id)}
+          >
+            <Text style={styles.acceptButtonText}>Accept Order</Text>
+          </TouchableOpacity>
+        )}
       </View>
-
-      <View style={styles.priceContainer}>
-        <Text style={styles.priceLabel}>Order Total</Text>
-        <Text style={styles.priceValue}>₱{item.total_price.toFixed(2)}</Text>
-      </View>
-
-      {/* Action Buttons */}
-      {item.status === "Ready" && (
-        <TouchableOpacity
-          style={styles.acceptButton}
-          onPress={() => acceptOrder(item.id)}
-        >
-          <Text style={styles.acceptButtonText}>Accept Order</Text>
-        </TouchableOpacity>
-      )}
-
-      {item.status === "Accepted by Deliverer" && (
-        <TouchableOpacity
-          style={styles.pickupButton}
-          onPress={() => updateOrderStatus(item.id, "Picked Up")}
-        >
-          <Text style={styles.pickupButtonText}>Mark as Picked Up</Text>
-        </TouchableOpacity>
-      )}
-
-      {item.status === "Picked Up" && (
-        <TouchableOpacity
-          style={styles.deliveredButton}
-          onPress={() => updateOrderStatus(item.id, "Delivered")}
-        >
-          <Text style={styles.deliveredButtonText}>Mark as Delivered</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 
@@ -276,96 +245,59 @@ const AvailableOrders = () => {
     );
   }
 
+  // Separate orders by status
+  const readyOrders = orders.filter(o => o.status === 'ready');
+  const acceptedOrders = orders.filter(o => o.status === 'accepted');
+  const pickedUpOrders = orders.filter(o => o.status === 'on_the_way');
+
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>🚚 Available Orders</Text>
-        <Text style={styles.subtitle}>
-          {orders.length} active order{orders.length !== 1 ? 's' : ''}
-        </Text>
-      </View>
-
-      {/* Stats Cards */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statIcon}>📦</Text>
-          <View style={styles.statInfo}>
-            <Text style={styles.statValue}>
-              {orders.filter(o => o.status === 'Ready').length}
-            </Text>
-            <Text style={styles.statLabel}>Ready</Text>
+        <Text style={styles.title}>Accept Orders</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <View style={styles.statBadge}>
+              <Text style={styles.statNumber}>{readyOrders.length}</Text>
+            </View>
+            <Text style={styles.statLabel}>Today's Earnings</Text>
           </View>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statIcon}>✅</Text>
-          <View style={styles.statInfo}>
-            <Text style={styles.statValue}>
-              {orders.filter(o => o.status === 'Accepted by Deliverer').length}
-            </Text>
-            <Text style={styles.statLabel}>Accepted</Text>
+          <View style={styles.statItem}>
+            <View style={styles.statBadge}>
+              <Text style={styles.statNumber}>{acceptedOrders.length + pickedUpOrders.length}</Text>
+            </View>
+            <Text style={styles.statLabel}>Deliveries</Text>
           </View>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statIcon}>🚴</Text>
-          <View style={styles.statInfo}>
-            <Text style={styles.statValue}>
-              {orders.filter(o => o.status === 'Picked Up').length}
-            </Text>
-            <Text style={styles.statLabel}>In Transit</Text>
+          <View style={styles.statItem}>
+            <View style={styles.statBadge}>
+              <Text style={styles.statNumber}>4.8</Text>
+            </View>
+            <Text style={styles.statLabel}>Rating</Text>
           </View>
         </View>
       </View>
 
-      {/* Tab Navigation */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, view === 'Ready' && styles.activeTab]}
-          onPress={() => setView('Ready')}
-        >
-          <Text style={[styles.tabText, view === 'Ready' && styles.activeTabText]}>
-            Ready
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, view === 'Accepted' && styles.activeTab]}
-          onPress={() => setView('Accepted')}
-        >
-          <Text style={[styles.tabText, view === 'Accepted' && styles.activeTabText]}>
-            Accepted
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, view === 'PickedUp' && styles.activeTab]}
-          onPress={() => setView('PickedUp')}
-        >
-          <Text style={[styles.tabText, view === 'PickedUp' && styles.activeTabText]}>
-            Picked Up
-          </Text>
-        </TouchableOpacity>
+      {/* Orders section */}
+      <View style={styles.ordersSection}>
+        <Text style={styles.sectionTitle}>Available Orders</Text>
+        {orders.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateIcon}>📦</Text>
+            <Text style={styles.emptyStateTitle}>No orders available</Text>
+            <Text style={styles.emptyStateText}>
+              New orders will appear here when they're ready for pickup
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={orders}
+            keyExtractor={(item) => item.id}
+            renderItem={renderOrderCard}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </View>
-
-      {/* Orders List */}
-      {filteredOrders.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateIcon}>
-            {view === 'Ready' ? '📦' : view === 'Accepted' ? '✅' : '🚴'}
-          </Text>
-          <Text style={styles.emptyStateTitle}>No orders here</Text>
-          <Text style={styles.emptyStateText}>
-            {view === 'Ready' && 'Orders ready for pickup will appear here'}
-            {view === 'Accepted' && 'Orders you accept will show here'}
-            {view === 'PickedUp' && 'Orders marked as picked up will appear here'}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredOrders}
-          keyExtractor={(item) => item.id}
-          renderItem={renderOrderCard}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
     </View>
   );
 };
@@ -388,244 +320,196 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 60 : 24,
-    paddingBottom: 20,
-    backgroundColor: Colors.light.surface,
+    backgroundColor: '#4A2C4D',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-    letterSpacing: -0.5,
+    color: '#FFFFFF',
+    marginBottom: 20,
   },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
-  },
-  statsContainer: {
+  statsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    justifyContent: 'space-between',
     gap: 12,
-    backgroundColor: Colors.light.surface,
   },
-  statCard: {
+  statItem: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: Colors.light.primaryLight,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 12,
-    gap: 8,
+    padding: 12,
+    alignItems: 'center',
   },
-  statIcon: {
-    fontSize: 28,
+  statBadge: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 8,
   },
-  statInfo: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 20,
+  statNumber: {
+    fontSize: 18,
     fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 2,
+    color: '#4A2C4D',
   },
   statLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    gap: 8,
-    backgroundColor: Colors.light.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: Colors.light.input,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeTab: {
-    backgroundColor: Colors.light.primary,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  activeTabText: {
+    fontSize: 11,
     color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  ordersSection: {
+    flex: 1,
+    marginTop: -12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.light.text,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    marginTop: 20,
   },
   listContent: {
-    padding: 24,
+    paddingHorizontal: 20,
     paddingBottom: 100,
   },
   orderCard: {
     backgroundColor: Colors.light.surface,
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  orderHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  orderId: {
-    fontSize: 18,
+  customerSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.light.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    fontSize: 20,
     fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  orderDate: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusPending: {
-    backgroundColor: Colors.light.warningLight,
-  },
-  statusReady: {
-    backgroundColor: Colors.light.successLight,
-  },
-  statusAccepted: {
-    backgroundColor: Colors.light.infoLight,
-  },
-  statusPickedUp: {
-    backgroundColor: Colors.light.successLight,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  statusTextPending: {
-    color: Colors.light.warning,
-  },
-  statusTextReady: {
-    color: Colors.light.success,
-  },
-  statusTextAccepted: {
-    color: Colors.light.info,
-  },
-  statusTextPickedUp: {
-    color: Colors.light.success,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.light.border,
-    marginBottom: 16,
+    color: Colors.light.primary,
   },
   customerInfo: {
-    marginBottom: 16,
-  },
-  customerLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    flex: 1,
   },
   customerName: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.text,
+    marginBottom: 2,
   },
-  priceContainer: {
+  orderTime: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    fontWeight: '400',
+  },
+  statusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  orderSummary: {
+    backgroundColor: Colors.light.input,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.light.primaryLight,
-    borderRadius: 12,
+    marginBottom: 8,
   },
-  priceLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+  summaryLabel: {
+    fontSize: 13,
     color: Colors.light.textSecondary,
+    fontWeight: '500',
   },
-  priceValue: {
-    fontSize: 24,
+  summaryValue: {
+    fontSize: 13,
+    color: Colors.light.text,
+    fontWeight: '600',
+  },
+  priceText: {
+    fontSize: 18,
     fontWeight: '700',
     color: Colors.light.primary,
   },
+  statusBadgeContainer: {
+    marginBottom: 16,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  statusDotSmall: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  detailsButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.light.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.light.surface,
+  },
+  detailsButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.primary,
+  },
   acceptButton: {
-    height: 48,
+    flex: 1,
+    height: 44,
     borderRadius: 12,
     backgroundColor: Colors.light.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
   acceptButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  pickupButton: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.info,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.light.info,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  pickupButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  deliveredButton: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.success,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.light.success,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  deliveredButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },

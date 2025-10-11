@@ -6,7 +6,7 @@ export default function DelivererLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: true,
+        headerShown: false,
         tabBarActiveTintColor: "#1e90ff",
         tabBarStyle: {
           backgroundColor: "#fff",
@@ -42,6 +42,13 @@ export default function DelivererLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-circle-outline" size={size} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="order_details"
+        options={{
+          href: null, // This hides it from the tab bar
+          title: "Order Details",
         }}
       />
     </Tabs>

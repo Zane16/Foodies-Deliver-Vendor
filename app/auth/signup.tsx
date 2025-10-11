@@ -28,12 +28,13 @@ export default function Signup() {
 
       const userId = authData.user.id;
 
-      // 2️⃣ Insert user data into profiles table (NOW includes status)
+      // 2️⃣ Insert user data into profiles table (includes status for approval workflow)
       const { error: profileError } = await supabase
         .from('profiles')
-        .insert([{ 
-          id: userId, 
-          role: role.toLowerCase(), 
+        .insert([{
+          id: userId,
+          email: email,
+          role: role.toLowerCase(),
           full_name: fullName,
           status: role.toLowerCase() === 'vendor' || role.toLowerCase() === 'deliverer'
             ? 'pending'
@@ -41,18 +42,17 @@ export default function Signup() {
         }]);
       if (profileError) throw profileError;
 
-      // 3️⃣ Insert into vendors table ONLY if role is Vendor (NOW includes status)
+      // 3️⃣ Insert into vendors table ONLY if role is Vendor
+      // Note: In new schema, vendor.id = profile.id (vendor IS a profile)
       if (role.toLowerCase() === 'vendor') {
         if (!vendorName) return Alert.alert('Error', 'Please enter your business name.');
 
-        // ✅ Minimal RLS-safe insertion
         const { error: vendorError } = await supabase
           .from('vendors')
-          .insert([{ 
-            id: userId, 
-            name: vendorName,
-            auth_user_id: userId,
-            status: 'pending'
+          .insert([{
+            id: userId, // Same ID as profile
+            business_name: vendorName,
+            is_active: false // Inactive until approved
           }]);
         if (vendorError) throw vendorError;
       }

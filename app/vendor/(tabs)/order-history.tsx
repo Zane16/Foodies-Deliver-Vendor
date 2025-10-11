@@ -24,7 +24,7 @@ export default function OrderHistory() {
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .eq('status', 'Completed')
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -49,7 +49,7 @@ export default function OrderHistory() {
           const newOrder = payload.new as Order;
 
           setOrders((prev) => {
-            if (newOrder.status === 'Completed') {
+            if (newOrder.status === 'completed') {
               // ✅ Add or update the order in history
               const exists = prev.some((o) => o.id === newOrder.id);
               if (exists) {
@@ -60,7 +60,7 @@ export default function OrderHistory() {
                 return [newOrder, ...prev];
               }
             } else {
-              // ✅ If the order is no longer Completed, remove it
+              // ✅ If the order is no longer completed, remove it
               return prev.filter((o) => o.id !== newOrder.id);
             }
           });

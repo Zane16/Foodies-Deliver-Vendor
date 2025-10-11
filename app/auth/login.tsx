@@ -55,6 +55,10 @@ export default function Login() {
       const role = profile.role?.toLowerCase()
       const status = profile.status
 
+      // Debug: Log the actual status value
+      console.log('DEBUG - Profile status:', status, 'Type:', typeof status)
+      console.log('DEBUG - Full profile:', JSON.stringify(profile))
+
       // 3️⃣ Check status before allowing access
       if (status === "pending") {
         throw new Error("Your account is still pending approval by the admin.")
@@ -70,7 +74,7 @@ export default function Login() {
       if (role === "vendor") {
         router.replace("/vendor/(tabs)/OrderStatusUpdate")
       } else if (role === "deliverer") {
-        router.replace("/deliverer/tabs/deliverer-dashboard")
+        router.replace("/deliverer/tabs/Orders")
       } else {
         throw new Error("This app is only for Vendors and Deliverers.")
       }

@@ -64,20 +64,10 @@ export default function DelivererDashboard() {
         return;
       }
 
-      // Get deliverer record
-      const { data: delivererData, error: delivererError } = await supabase
-        .from('deliverers')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (delivererError || !delivererData) {
-        Alert.alert('Error', 'Deliverer record not found');
-        return;
-      }
-
-      setDelivererId(delivererData.id);
-      await fetchOrders(delivererData.id);
+      // In new schema: deliverer.id = user.id (deliverer IS a profile)
+      const delivererId = user.id;
+      setDelivererId(delivererId);
+      await fetchOrders(delivererId);
     } catch (err: any) {
       Alert.alert('Error', err.message);
     } finally {
@@ -87,11 +77,11 @@ export default function DelivererDashboard() {
 
   const fetchOrders = async (delId: string) => {
     try {
-      // Fetch available orders (Ready status, no deliverer assigned)
+      // Fetch available orders (ready status, no deliverer assigned)
       const { data: available, error: availableError } = await supabase
         .from('orders')
         .select('*')
-        .eq('status', 'Ready')
+        .eq('status', 'ready')
         .is('deliverer_id', null);
 
       if (availableError) throw availableError;
@@ -101,7 +91,7 @@ export default function DelivererDashboard() {
         .from('orders')
         .select('*')
         .eq('deliverer_id', delId)
-        .neq('status', 'Completed');
+        .neq('status', 'completed');
 
       if (myOrdersError) throw myOrdersError;
 
@@ -125,11 +115,11 @@ export default function DelivererDashboard() {
           const newOrder = payload.new as Order;
           const oldOrder = payload.old as Order;
 
-          if (payload.eventType === 'INSERT' && newOrder.status === 'Ready') {
+          if (payload.eventType === 'INSERT' && newOrder.status === 'ready') {
             setAvailableOrders((prev) => [newOrder, ...prev]);
           } else if (payload.eventType === 'UPDATE') {
             // If order is assigned to me
-            if (newOrder.deliverer_id === delivererId && newOrder.status !== 'Completed') {
+            if (newOrder.deliverer_id === delivererId && newOrder.status !== 'completed') {
               setMyDeliveries((prev) => {
                 const exists = prev.find((o) => o.id === newOrder.id);
                 if (exists) {
@@ -141,11 +131,11 @@ export default function DelivererDashboard() {
               setAvailableOrders((prev) => prev.filter((o) => o.id !== newOrder.id));
             }
             // If order is completed, remove from my deliveries
-            if (newOrder.status === 'Completed') {
+            if (newOrder.status === 'completed') {
               setMyDeliveries((prev) => prev.filter((o) => o.id !== newOrder.id));
             }
             // If order becomes available again (deliverer unassigned)
-            if (newOrder.status === 'Ready' && !newOrder.deliverer_id) {
+            if (newOrder.status === 'ready' && !newOrder.deliverer_id) {
               setAvailableOrders((prev) => {
                 const exists = prev.find((o) => o.id === newOrder.id);
                 if (!exists) return [newOrder, ...prev];
@@ -171,9 +161,9 @@ export default function DelivererDashboard() {
     try {
       const { error } = await supabase
         .from('orders')
-        .update({ 
+        .update({
           deliverer_id: delivererId,
-          status: 'Out for Delivery' 
+          status: 'on_the_way'
         })
         .eq('id', orderId);
 
@@ -183,7 +173,7 @@ export default function DelivererDashboard() {
       const order = availableOrders.find((o) => o.id === orderId);
       if (order) {
         setAvailableOrders((prev) => prev.filter((o) => o.id !== orderId));
-        setMyDeliveries((prev) => [{ ...order, deliverer_id: delivererId, status: 'Out for Delivery' }, ...prev]);
+        setMyDeliveries((prev) => [{ ...order, deliverer_id: delivererId, status: 'on_the_way' }, ...prev]);
       }
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -194,7 +184,7 @@ export default function DelivererDashboard() {
     try {
       const { error } = await supabase
         .from('orders')
-        .update({ status: 'Completed' })
+        .update({ status: 'completed' })
         .eq('id', orderId);
 
       if (error) throw error;
@@ -228,15 +218,15 @@ export default function DelivererDashboard() {
         </View>
         <View style={[
           styles.statusBadge,
-          item.status === 'Ready' && styles.statusReady,
-          item.status === 'Out for Delivery' && styles.statusDelivering,
+          item.status === 'ready' && styles.statusReady,
+          item.status === 'on_the_way' && styles.statusDelivering,
         ]}>
           <Text style={[
             styles.statusText,
-            item.status === 'Ready' && styles.statusTextReady,
-            item.status === 'Out for Delivery' && styles.statusTextDelivering,
+            item.status === 'ready' && styles.statusTextReady,
+            item.status === 'on_the_way' && styles.statusTextDelivering,
           ]}>
-            {item.status}
+            {item.status === 'on_the_way' ? 'On the Way' : item.status.charAt(0).toUpperCase() + item.status.slice(1)}
           </Text>
         </View>
       </View>
