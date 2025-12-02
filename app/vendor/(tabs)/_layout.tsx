@@ -46,7 +46,6 @@ export default function VendorTabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" color={color} size={size} />,
         }}
       />
-      
       <Tabs.Screen
         name="order-history"
         options={{
@@ -59,6 +58,33 @@ export default function VendorTabsLayout() {
         options={{
           title: "Reviews",
           tabBarIcon: ({ color, size }) => <Ionicons name="star-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          href: null, // Hide from tab bar - accessible from Orders screen
+          title: "Sales Reports",
+        }}
+      />
+      <Tabs.Screen
+        name="track-order"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="featured-items"
+        options={{
+          href: null, // Hide from tab bar - accessible from Menu screen
+          title: "Featured Items",
         }}
       />
     </Tabs>

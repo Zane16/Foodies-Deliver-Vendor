@@ -4,7 +4,7 @@ import { ActivityIndicator, FlatList, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../../supabaseClient';
 import { Colors } from '../../../constants/Colors';
-import { styles } from '../../../styles/vendor/reviews.styles';
+import { styles } from '../../../styles/deliverer/reviews.styles';
 
 interface Rating {
   id: string;
@@ -19,28 +19,28 @@ interface Rating {
   } | null;
 }
 
-export default function VendorReviews() {
+export default function DelivererReviews() {
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [loading, setLoading] = useState(true);
-  const [vendorId, setVendorId] = useState<string | null>(null);
+  const [delivererId, setDelivererId] = useState<string | null>(null);
   const [averageRating, setAverageRating] = useState<number>(0);
 
   useEffect(() => {
-    const getVendorId = async () => {
+    const getDelivererId = async () => {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error) {
         console.error('Error getting user:', error);
         return;
       }
       if (user) {
-        setVendorId(user.id);
+        setDelivererId(user.id);
       }
     };
-    getVendorId();
+    getDelivererId();
   }, []);
 
   const fetchRatings = async () => {
-    if (!vendorId) return;
+    if (!delivererId) return;
 
     setLoading(true);
     try {
@@ -58,8 +58,8 @@ export default function VendorReviews() {
             profile_picture_url
           )
         `)
-        .eq('rated_entity_id', vendorId)
-        .eq('type', 'vendor')
+        .eq('rated_entity_id', delivererId)
+        .eq('type', 'deliverer')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -85,10 +85,10 @@ export default function VendorReviews() {
   };
 
   useEffect(() => {
-    if (vendorId) {
+    if (delivererId) {
       fetchRatings();
     }
-  }, [vendorId]);
+  }, [delivererId]);
 
   const renderStars = (rating: number) => {
     return (
@@ -143,7 +143,7 @@ export default function VendorReviews() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: Colors.light.background }}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.light.primary} />
+          <ActivityIndicator size="large" color="#6366F1" />
           <Text style={styles.loadingText}>Loading reviews...</Text>
         </View>
       </SafeAreaView>
@@ -154,7 +154,7 @@ export default function VendorReviews() {
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.light.background }}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Reviews & Ratings</Text>
+          <Text style={styles.title}>My Reviews</Text>
         </View>
 
         {ratings.length > 0 && (
@@ -174,7 +174,7 @@ export default function VendorReviews() {
             <Ionicons name="star-outline" size={64} color={Colors.light.icon} />
             <Text style={styles.emptyStateTitle}>No Reviews Yet</Text>
             <Text style={styles.emptyStateText}>
-              Your customer reviews will appear here
+              Customer reviews for your deliveries will appear here
             </Text>
           </View>
         ) : (

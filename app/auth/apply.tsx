@@ -11,35 +11,21 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Colors } from '../../constants/Colors';
 import { supabase } from '../../supabaseClient';
+import { styles } from '../../styles/auth/apply.styles';
 
 // Configuration - Use environment variable in production
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.148:3000';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://foodies-web-gamma.vercel.app';
 
 // File size limit (5MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-// Colors - matching your signup design
-const Colors = {
-  light: {
-    background: '#F8F9FA',
-    surface: '#FFFFFF',
-    primary: '#FF6B35',
-    text: '#1A1A1A',
-    icon: '#6B7280',
-    border: '#E5E7EB',
-    input: '#F9FAFB',
-    placeholder: '#9CA3AF',
-    success: '#10B981',
-    error: '#EF4444',
-  },
-};
 
 // Email validation helper
 const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -349,6 +335,16 @@ export default function Apply() {
 
     try {
       const document_urls = allFiles.map((f) => f.url).filter(Boolean);
+
+      console.log('=== APPLICATION SUBMISSION DEBUG ===');
+      console.log('API URL:', `${API_BASE_URL}/api/applications`);
+      console.log('Request payload:', {
+        full_name: fullName,
+        email,
+        role: role.toLowerCase(),
+        document_urls: document_urls,
+      });
+
       const apiResponse = await fetch(`${API_BASE_URL}/api/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -368,7 +364,10 @@ export default function Apply() {
         }),
       });
 
+      console.log('Response status:', apiResponse.status);
       const data = await apiResponse.json();
+      console.log('Response data:', data);
+
       if (!apiResponse.ok) {
         throw new Error(data.error || 'Submission failed.');
       }
@@ -389,23 +388,37 @@ export default function Apply() {
       setDelivererValidId([]);
       setDelivererVehicleReg([]);
     } catch (err) {
-      console.error(err);
-      Alert.alert('Error', err instanceof Error ? err.message : 'Network error or server unavailable.');
+      console.error('=== SUBMISSION ERROR ===');
+      console.error('Error type:', err instanceof Error ? err.constructor.name : typeof err);
+      console.error('Error message:', err instanceof Error ? err.message : String(err));
+      console.error('Full error:', err);
+
+      let errorMessage = 'Network error or server unavailable.';
+      if (err instanceof Error) {
+        if (err.message.includes('Network request failed')) {
+          errorMessage = `Cannot connect to ${API_BASE_URL}\n\nPossible causes:\n• Backend server not running\n• Wrong IP address\n• Firewall blocking connection`;
+        } else {
+          errorMessage = err.message;
+        }
+      }
+
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.light.background }}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.header}>
           <Text style={styles.title}>Application Form</Text>
           <Text style={styles.subtitle}>Join our community of vendors and deliverers</Text>
@@ -650,202 +663,8 @@ export default function Apply() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    padding: 24,
-    paddingTop: 60,
-  },
-  header: {
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.light.icon,
-    fontWeight: '400',
-  },
-  formContainer: {
-    flex: 1,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  required: {
-    color: Colors.light.error,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.input,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    paddingHorizontal: 16,
-    height: 52,
-  },
-  textAreaWrapper: {
-    height: 120,
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-  },
-  pickerWrapper: {
-    paddingHorizontal: 8,
-  },
-  loadingWrapper: {
-    justifyContent: 'center',
-    gap: 8,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: Colors.light.text,
-    fontWeight: '400',
-  },
-  textArea: {
-    height: '100%',
-  },
-  picker: {
-    flex: 1,
-    color: Colors.light.text,
-    fontSize: 16,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: Colors.light.icon,
-  },
-  roleContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  roleOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: Colors.light.border,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  roleOptionSelected: {
-    backgroundColor: `${Colors.light.primary}10`,
-    borderColor: Colors.light.primary,
-  },
-  roleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.icon,
-  },
-  roleTextSelected: {
-    color: Colors.light.primary,
-  },
-  uploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: Colors.light.border,
-    borderStyle: 'dashed',
-    paddingVertical: 16,
-    gap: 8,
-  },
-  uploadButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.primary,
-  },
-  uploadedFileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  uploadedImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-  },
-  uploadedFileInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  uploadStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  uploadProgressText: {
-    fontSize: 14,
-    color: Colors.light.icon,
-    fontWeight: '500',
-  },
-  uploadSuccessText: {
-    fontSize: 14,
-    color: Colors.light.success,
-    fontWeight: '500',
-  },
-  uploadErrorText: {
-    fontSize: 14,
-    color: Colors.light.error,
-    fontWeight: '500',
-  },
-  removeIconButton: {
-    padding: 8,
-  },
-  submitButton: {
-    flexDirection: 'row',
-    backgroundColor: Colors.light.primary,
-    borderRadius: 12,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  submitButtonDisabled: {
-    opacity: 0.7,
-  },
-  submitButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});

@@ -1,7 +1,12 @@
 // app/vendor/OrderStatusUpdate.tsx
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Image, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../../supabaseClient';
+import { styles } from '../../../styles/vendor/OrderStatusUpdate.styles';
+import { Colors } from '../../../constants/Colors';
 
 
 interface OrderItem {
@@ -24,19 +29,19 @@ interface Order {
   deliverer_id: string | null;
   status: string;
   total_price: number;
+  delivery_fee: number;
   created_at: string;
-  items: OrderItem[]; // <-- Add this
-}
-
-
-interface Order {
-  id: string;
-  customer_id: string;
-  vendor_id: string;
-  deliverer_id: string | null;
-  status: string;
-  total_price: number;
-  created_at: string;
+  items: OrderItem[];
+  customer_name: string | null;
+  customer_phone: string | null;
+  delivery_address: string | null;
+  delivery_notes: string | null;
+  customer?: {
+    full_name: string;
+    phone: string | null;
+    delivery_address: string | null;
+    profile_picture_url: string | null;
+  };
 }
 
 interface Props {
@@ -44,29 +49,56 @@ interface Props {
   userId: string;
 }
 
-// Define your color palette to match the design system
-const Colors = {
-  light: {
-    background: '#FAFAFA',
-    surface: '#FFFFFF',
-    primary: '#E91E63',
-    primaryLight: '#FCE4EC',
-    text: '#1F2937',
-    textSecondary: '#6B7280',
-    icon: '#9CA3AF',
-    border: '#E5E7EB',
-    input: '#F3F4F6',
-    success: '#10B981',
-    successLight: '#D1FAE5',
-    danger: '#EF4444',
-    dangerLight: '#FEE2E2',
-    warning: '#F59E0B',
-  }
-};
-
 const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [view, setView] = useState<'Order' | 'Preparing' | 'Ready'>('Order');
+  const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
+  const [view, setView] = useState<'Incoming' | 'Active'>('Incoming');
+  const [vendorInfo, setVendorInfo] = useState<{ business_name: string; business_address: string; delivery_fee: number; minimum_order: number; header_image_url?: string | null } | null>(null);
+
+  // Fetch vendor info
+  const fetchVendorInfo = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('vendors')
+        .select('business_name, business_address, delivery_fee, minimum_order, header_image_url')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      setVendorInfo(data);
+    } catch (err: any) {
+      console.error('Error fetching vendor info:', err.message);
+    }
+  };
+
+  // Fetch completed orders for income calculation
+  const fetchCompletedOrders = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const vendorId = user.id;
+
+      // Fetch only completed orders for today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const { data, error } = await supabase
+        .from('orders')
+        .select('total_price')
+        .eq('vendor_id', vendorId)
+        .eq('status', 'completed')
+        .gte('created_at', today.toISOString());
+
+      if (error) throw error;
+      setCompletedOrders(data as Order[]);
+    } catch (err: any) {
+      console.error('Error fetching completed orders:', err.message);
+    }
+  };
 
   // Fetch orders
   const fetchOrders = async () => {
@@ -81,10 +113,18 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
       // In new schema: vendor.id = user.id (vendor IS a profile)
       const vendorId = user.id;
 
-      // Fetch orders for this vendor
-      let query = supabase.from('orders').select('*');
+      // Fetch orders for this vendor with customer details
+      let query = supabase.from('orders').select(`
+        *,
+        customer:profiles!orders_customer_id_fkey(
+          full_name,
+          phone,
+          delivery_address,
+          profile_picture_url
+        )
+      `);
       query = query.eq('vendor_id', vendorId);
-      
+
       // Exclude completed orders (they belong in History screen)
       query = query.neq('status', 'completed');
 
@@ -98,45 +138,88 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
   };
 
   useEffect(() => {
+    fetchVendorInfo();
     fetchOrders();
+    fetchCompletedOrders();
 
-    // Real-time subscription
-    const subscription = supabase
-      .channel('orders')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        (payload) => {
-          const newOrder = payload.new as Order;
-          const oldOrder = payload.old as Order;
+    // Get vendor ID for filtering real-time updates
+    const setupRealtimeSubscription = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-          setOrders((prev) => {
-            switch (payload.eventType) {
-              case 'INSERT':
-                // Only add if not completed
-                return newOrder.status !== 'completed'
-                  ? [newOrder, ...prev]
-                  : prev;
-              case 'UPDATE':
-                // If updated to completed, remove from active list
+      const vendorId = user.id;
+
+      // Real-time subscription with vendor filtering
+      const subscription = supabase
+        .channel('vendor-orders')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'orders',
+            filter: `vendor_id=eq.${vendorId}` // Only listen to this vendor's orders
+          },
+          async (payload) => {
+            const newOrder = payload.new as Order;
+            const oldOrder = payload.old as Order;
+
+            // For INSERT events, fetch the order with customer details
+            if (payload.eventType === 'INSERT') {
+              const { data: orderWithCustomer } = await supabase
+                .from('orders')
+                .select(`
+                  *,
+                  customer:profiles!orders_customer_id_fkey(
+                    full_name,
+                    phone,
+                    delivery_address,
+                    profile_picture_url
+                  )
+                `)
+                .eq('id', newOrder.id)
+                .single();
+
+              if (orderWithCustomer) {
+                setOrders((prev) => {
+                  // Only add if not completed and not already in list
+                  if (orderWithCustomer.status !== 'completed' && !prev.find(o => o.id === orderWithCustomer.id)) {
+                    return [orderWithCustomer as Order, ...prev];
+                  }
+                  return prev;
+                });
+              }
+            } else if (payload.eventType === 'UPDATE') {
+              setOrders((prev) => {
+                // If updated to completed, remove from active list and refresh completed orders
                 if (newOrder.status === 'completed') {
+                  fetchCompletedOrders();
                   return prev.filter((o) => o.id !== newOrder.id);
                 }
+                // Update the order in the list
                 return prev.map((o) =>
-                  o.id === newOrder.id ? newOrder : o
+                  o.id === newOrder.id ? { ...o, ...newOrder } : o
                 );
-              case 'DELETE':
-                return prev.filter((o) => o.id !== oldOrder.id);
-              default:
-                return prev;
+              });
+            } else if (payload.eventType === 'DELETE') {
+              setOrders((prev) => prev.filter((o) => o.id !== oldOrder.id));
             }
-          });
-        }
-      )
-      .subscribe();
+          }
+        )
+        .subscribe();
+
+      return subscription;
+    };
+
+    let subscription: any;
+    setupRealtimeSubscription().then(sub => {
+      subscription = sub;
+    });
 
     return () => {
-      supabase.removeChannel(subscription);
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
     };
   }, []);
 
@@ -183,22 +266,74 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
   // Filter orders based on current view
   const filteredOrders = orders.filter((order) => {
     switch (view) {
-      case 'Order':
+      case 'Incoming':
+        // New orders that need to be accepted
         return order.status === 'pending';
-      case 'Preparing':
-        return order.status === 'preparing';
-      case 'Ready':
-        return order.status === 'ready';
+      case 'Active':
+        // All accepted orders through entire delivery process (preparing, ready, on_the_way, delivered)
+        return ['preparing', 'ready', 'on_the_way', 'delivered'].includes(order.status);
       default:
         return false;
     }
   });
 
-  const renderItem = ({ item }: { item: Order }) => (
+  // Calculate stats
+  const totalOrders = orders.length;
+  const totalIncome = completedOrders.reduce((sum, order) => sum + parseFloat(order.total_price.toString()), 0);
+
+  const renderItem = ({ item }: { item: Order }) => {
+    // Debug logging - CHECK THIS IN YOUR CONSOLE
+    console.log('=== ORDER DEBUG ===');
+    console.log('Order ID:', item.id);
+    console.log('Customer ID from order:', item.customer_id);
+    console.log('Vendor ID from order:', item.vendor_id);
+    console.log('Raw customer data:', JSON.stringify(item.customer, null, 2));
+    console.log('Customer is array?', Array.isArray(item.customer));
+
+    // Handle customer data - might be array or object
+    const customerData = Array.isArray(item.customer) && item.customer.length > 0
+      ? item.customer[0]
+      : item.customer;
+
+    // Get customer info from either the joined data or cached fields
+    const customerName = customerData?.full_name || item.customer_name || 'Customer';
+    const customerPhone = customerData?.phone || item.customer_phone;
+    const deliveryAddress = customerData?.delivery_address || item.delivery_address;
+    const profilePictureUrl = customerData?.profile_picture_url;
+
+    console.log('Resolved customer name:', customerName);
+    console.log('Resolved profile picture URL:', profilePictureUrl);
+    console.log('==================');
+
+    return (
     <View style={styles.orderCard}>
+      {/* Compact Header with Status, Customer, Date, and Total */}
       <View style={styles.orderHeader}>
-        <View>
-          <Text style={styles.orderId}>Order #{item.id.slice(0, 8)}</Text>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <View style={[
+              styles.statusBadge,
+              item.status === 'pending' && styles.statusPending,
+              item.status === 'preparing' && styles.statusPreparing,
+              item.status === 'ready' && styles.statusReady,
+              item.status === 'on_the_way' && { backgroundColor: Colors.light.infoLight },
+              item.status === 'delivered' && { backgroundColor: Colors.light.successLight },
+            ]}>
+              <Text style={[
+                styles.statusText,
+                item.status === 'pending' && styles.statusTextPending,
+                item.status === 'preparing' && styles.statusTextPreparing,
+                item.status === 'ready' && styles.statusTextReady,
+                item.status === 'on_the_way' && { color: Colors.light.info },
+                item.status === 'delivered' && { color: Colors.light.success },
+              ]}>
+                {item.status === 'on_the_way' ? 'Out for Delivery' :
+                 item.status === 'delivered' ? 'Delivered' :
+                 item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+              </Text>
+            </View>
+            <Text style={styles.customerName}>• {customerName}</Text>
+          </View>
           <Text style={styles.orderDate}>
             {new Date(item.created_at).toLocaleString('en-US', {
               month: 'short',
@@ -208,110 +343,179 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
             })}
           </Text>
         </View>
-        <View style={[
-          styles.statusBadge,
-          item.status === 'pending' && styles.statusPending,
-          item.status === 'preparing' && styles.statusPreparing,
-          item.status === 'ready' && styles.statusReady,
-        ]}>
-          <Text style={[
-            styles.statusText,
-            item.status === 'pending' && styles.statusTextPending,
-            item.status === 'preparing' && styles.statusTextPreparing,
-            item.status === 'ready' && styles.statusTextReady,
-          ]}>
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-          </Text>
-        </View>
+        <Text style={styles.totalValue}>₱{item.total_price.toFixed(2)}</Text>
       </View>
-  
+
       <View style={styles.divider} />
-  
-      {/* NEW: Display each ordered item */}
-      <View style={{ marginBottom: 16 }}>
+
+      {/* Compact Order Items - No Images */}
+      <View style={styles.itemsSection}>
         {item.items.map((orderItem) => (
-          <View key={orderItem.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-            <Text style={{ color: Colors.light.text }}>{orderItem.name} x{orderItem.quantity}</Text>
-            <Text style={{ color: Colors.light.text }}>₱{(orderItem.price * orderItem.quantity).toFixed(2)}</Text>
+          <View key={orderItem.id} style={styles.itemRow}>
+            <Text style={styles.itemQuantity}>{orderItem.quantity}x</Text>
+            <Text style={styles.itemName}>{orderItem.name}</Text>
+            <Text style={styles.itemPrice}>₱{(orderItem.price * orderItem.quantity).toFixed(2)}</Text>
           </View>
         ))}
       </View>
-  
-      <View style={styles.priceContainer}>
-        <Text style={styles.priceLabel}>Total Amount</Text>
-        <Text style={styles.priceValue}>₱{item.total_price.toFixed(2)}</Text>
-      </View>
-  
+
       {/* Buttons depending on status */}
-      {item.status === 'pending' && view === 'Order' && (
+      {(item.status === 'pending' || item.status === 'preparing' || item.status === 'ready' || item.status === 'on_the_way' || item.status === 'delivered') && (
+        <View style={styles.divider} />
+      )}
+
+      {item.status === 'pending' && view === 'Incoming' && (
         <View style={styles.actionButtons}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.declineButton}
             onPress={() => handleDecline(item.id)}
           >
             <Text style={styles.declineButtonText}>Decline</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.acceptButton}
             onPress={() => handleAccept(item.id)}
           >
-            <Text style={styles.acceptButtonText}>Accept Order</Text>
+            <Text style={styles.acceptButtonText}>Accept</Text>
           </TouchableOpacity>
         </View>
       )}
-      {item.status === 'preparing' && view === 'Preparing' && (
+      {item.status === 'preparing' && view === 'Active' && (
         <TouchableOpacity
           style={styles.primaryButton}
           onPress={() => handleStatusChange(item.id, 'ready')}
         >
-          <Text style={styles.primaryButtonText}>Mark as Ready</Text>
+          <Text style={styles.primaryButtonText}>Mark Ready</Text>
         </TouchableOpacity>
       )}
-      {item.status === 'ready' && view === 'Ready' && (
+      {item.status === 'ready' && view === 'Active' && (
+        <View style={{
+          backgroundColor: Colors.light.warningLight,
+          padding: 8,
+          borderRadius: 6,
+        }}>
+          <Text style={{ fontSize: 12, color: Colors.light.text, textAlign: 'center' }}>
+            ⏳ Waiting for pickup
+          </Text>
+        </View>
+      )}
+      {item.status === 'on_the_way' && view === 'Active' && (
+        <View style={{
+          backgroundColor: Colors.light.infoLight,
+          paddingVertical: 10,
+          paddingHorizontal: 12,
+          borderRadius: 8,
+          alignItems: 'center',
+        }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.light.info }}>
+            🚚 Out for Delivery
+          </Text>
+        </View>
+      )}
+      {item.status === 'delivered' && view === 'Active' && (
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => handleStatusChange(item.id, 'completed')}
+          onPress={() => {
+            Alert.alert(
+              'Confirm Payment',
+              'Has the customer paid for this order?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Complete Order',
+                  onPress: () => handleStatusChange(item.id, 'completed'),
+                  style: 'default'
+                }
+              ]
+            );
+          }}
         >
-          <Text style={styles.primaryButtonText}>Complete Order</Text>
+          <Text style={styles.primaryButtonText}>✓ Complete & Confirm</Text>
         </TouchableOpacity>
       )}
     </View>
-  );
-  
+    );
+  };
+
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Orders Management</Text>
-        <Text style={styles.subtitle}>
-          {filteredOrders.length} {view.toLowerCase()} order{filteredOrders.length !== 1 ? 's' : ''}
-        </Text>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.light.background }}>
+      <View style={styles.container}>
+        {/* Vendor Header with Background Image */}
+        <View style={styles.vendorHeaderContainer}>
+          {vendorInfo?.header_image_url ? (
+            <>
+              <Image
+                source={{ uri: vendorInfo.header_image_url }}
+                style={styles.headerBackgroundImage}
+                resizeMode="cover"
+              />
+              <View style={styles.headerOverlay} />
+            </>
+          ) : (
+            <View style={styles.headerGradient} />
+          )}
+          <View style={styles.vendorHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.vendorName, vendorInfo?.header_image_url && { color: '#FFFFFF' }]}>
+                {vendorInfo?.business_name || 'Vendor'}
+              </Text>
+              <Text style={[styles.vendorSubtitle, vendorInfo?.header_image_url && { color: '#F0F0F0' }]}>
+                {vendorInfo?.business_address || 'Food Delivery'}
+              </Text>
+              {vendorInfo && (
+                <View style={{ flexDirection: 'row', marginTop: 6, gap: 12 }}>
+                  <Text style={[{ fontSize: 12, color: Colors.light.textSecondary }, vendorInfo?.header_image_url && { color: '#E0E0E0' }]}>
+                    Delivery: ₱{vendorInfo.delivery_fee.toFixed(2)}
+                  </Text>
+                  <Text style={[{ fontSize: 12, color: Colors.light.textSecondary }, vendorInfo?.header_image_url && { color: '#E0E0E0' }]}>
+                    Min Order: ₱{vendorInfo.minimum_order.toFixed(2)}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.vendorStatusBadge}>
+              <View style={styles.statusDotGreen} />
+              <Text style={styles.vendorStatusText}>Available</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Reports Button */}
+        <View style={styles.reportsButtonContainer}>
+          <TouchableOpacity
+            style={styles.reportsButton}
+            onPress={() => router.push('/vendor/(tabs)/reports' as any)}
+          >
+            <View style={styles.reportsButtonContent}>
+              <View style={styles.reportsIconContainer}>
+                <Ionicons name="bar-chart" size={32} color={Colors.light.primary} />
+              </View>
+              <View style={styles.reportsTextContainer}>
+                <Text style={styles.reportsButtonTitle}>View Sales Reports</Text>
+                <Text style={styles.reportsButtonSubtitle}>Track your daily, weekly & monthly sales</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color={Colors.light.textSecondary} />
+            </View>
+          </TouchableOpacity>
+        </View>
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
-          style={[styles.tab, view === 'Order' && styles.activeTab]}
-          onPress={() => setView('Order')}
+          style={[styles.tab, view === 'Incoming' && styles.activeTab]}
+          onPress={() => setView('Incoming')}
         >
-          <Text style={[styles.tabText, view === 'Order' && styles.activeTabText]}>
-            Orders
+          <Text style={[styles.tabText, view === 'Incoming' && styles.activeTabText]}>
+            Incoming
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, view === 'Preparing' && styles.activeTab]}
-          onPress={() => setView('Preparing')}
+          style={[styles.tab, view === 'Active' && styles.activeTab]}
+          onPress={() => setView('Active')}
         >
-          <Text style={[styles.tabText, view === 'Preparing' && styles.activeTabText]}>
-            Preparing
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, view === 'Ready' && styles.activeTab]}
-          onPress={() => setView('Ready')}
-        >
-          <Text style={[styles.tabText, view === 'Ready' && styles.activeTabText]}>
-            Ready
+          <Text style={[styles.tabText, view === 'Active' && styles.activeTabText]}>
+            Active Orders
           </Text>
         </TouchableOpacity>
       </View>
@@ -320,11 +524,10 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
       {filteredOrders.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateIcon}>📦</Text>
-          <Text style={styles.emptyStateTitle}>No orders yet</Text>
+          <Text style={styles.emptyStateTitle}>No orders</Text>
           <Text style={styles.emptyStateText}>
-            {view === 'Order' && 'New orders will appear here'}
-            {view === 'Preparing' && 'Orders being prepared will show here'}
-            {view === 'Ready' && 'Ready orders will appear here'}
+            {view === 'Incoming' && 'New orders will appear here'}
+            {view === 'Active' && 'Accepted orders will show here'}
           </Text>
         </View>
       ) : (
@@ -336,227 +539,9 @@ const OrderStatusUpdate: React.FC<Props> = ({ userRole, userId }) => {
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+      </View>
+    </SafeAreaView>
   );
 };
 
 export default OrderStatusUpdate;
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 60 : 24,
-    paddingBottom: 20,
-    backgroundColor: Colors.light.surface,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    gap: 8,
-    backgroundColor: Colors.light.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: Colors.light.input,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeTab: {
-    backgroundColor: Colors.light.primary,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  activeTabText: {
-    color: '#FFFFFF',
-  },
-  listContent: {
-    padding: 24,
-    paddingBottom: 100,
-  },
-  orderCard: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  orderId: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  orderDate: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusPending: {
-    backgroundColor: Colors.light.warning + '20',
-  },
-  statusPreparing: {
-    backgroundColor: Colors.light.primary + '20',
-  },
-  statusReady: {
-    backgroundColor: Colors.light.successLight,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  statusTextPending: {
-    color: Colors.light.warning,
-  },
-  statusTextPreparing: {
-    color: Colors.light.primary,
-  },
-  statusTextReady: {
-    color: Colors.light.success,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.light.border,
-    marginBottom: 16,
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.light.primaryLight,
-    borderRadius: 12,
-  },
-  priceLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  priceValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.primary,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  declineButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.dangerLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.light.danger + '40',
-  },
-  declineButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.danger,
-  },
-  acceptButton: {
-    flex: 2,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  acceptButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  primaryButton: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 24,
-  },
-  emptyStateIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-});

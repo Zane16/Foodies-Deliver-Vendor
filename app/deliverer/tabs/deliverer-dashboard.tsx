@@ -4,13 +4,15 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Platform,
-  StyleSheet,
+  Image,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Colors } from '../../../constants/Colors';
 import { supabase } from '../../../supabaseClient';
+import { styles } from '../../../styles/deliverer/deliverer-dashboard.styles';
 
 interface Order {
   id: string;
@@ -25,32 +27,17 @@ interface Order {
   customer_phone?: string;
 }
 
-// Define your color palette to match the design system
-const Colors = {
-  light: {
-    background: '#FAFAFA',
-    surface: '#FFFFFF',
-    primary: '#E91E63',
-    primaryLight: '#FCE4EC',
-    text: '#1F2937',
-    textSecondary: '#6B7280',
-    icon: '#9CA3AF',
-    border: '#E5E7EB',
-    input: '#F3F4F6',
-    success: '#10B981',
-    successLight: '#D1FAE5',
-    danger: '#EF4444',
-    info: '#3B82F6',
-    infoLight: '#DBEAFE',
-  }
-};
-
 export default function DelivererDashboard() {
   const [availableOrders, setAvailableOrders] = useState<Order[]>([]);
   const [myDeliveries, setMyDeliveries] = useState<Order[]>([]);
   const [view, setView] = useState<'Available' | 'MyDeliveries'>('Available');
   const [loading, setLoading] = useState(true);
   const [delivererId, setDelivererId] = useState<string | null>(null);
+  const [delivererProfile, setDelivererProfile] = useState<{
+    full_name: string;
+    profile_picture_url: string | null;
+    phone: string | null;
+  } | null>(null);
 
   useEffect(() => {
     initializeDeliverer();
@@ -67,6 +54,20 @@ export default function DelivererDashboard() {
       // In new schema: deliverer.id = user.id (deliverer IS a profile)
       const delivererId = user.id;
       setDelivererId(delivererId);
+
+      // Fetch deliverer profile info
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name, profile_picture_url, phone')
+        .eq('id', delivererId)
+        .single();
+
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+      } else {
+        setDelivererProfile(profile);
+      }
+
       await fetchOrders(delivererId);
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -206,7 +207,9 @@ export default function DelivererDashboard() {
     <View style={styles.orderCard}>
       <View style={styles.orderHeader}>
         <View>
-          <Text style={styles.orderId}>Order #{item.id.slice(0, 8)}</Text>
+          <Text style={styles.orderId}>
+            {item.customer_name ? `Delivery for ${item.customer_name}` : 'New Delivery Order'}
+          </Text>
           <Text style={styles.orderDate}>
             {new Date(item.created_at).toLocaleString('en-US', {
               month: 'short',
@@ -282,31 +285,49 @@ export default function DelivererDashboard() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color={Colors.light.primary} />
-        <Text style={styles.loadingText}>Loading deliveries...</Text>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.light.background }}>
+        <View style={[styles.container, styles.centerContent]}>
+          <ActivityIndicator size="large" color={Colors.light.primary} />
+          <Text style={styles.loadingText}>Loading deliveries...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   const displayOrders = view === 'Available' ? availableOrders : myDeliveries;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>🚚 Deliverer Dashboard</Text>
-          <Text style={styles.subtitle}>
-            {view === 'Available' 
-              ? `${availableOrders.length} available order${availableOrders.length !== 1 ? 's' : ''}`
-              : `${myDeliveries.length} active deliver${myDeliveries.length !== 1 ? 'ies' : 'y'}`
-            }
-          </Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.light.background }}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            {delivererProfile?.profile_picture_url ? (
+              <Image
+                source={{ uri: delivererProfile.profile_picture_url }}
+                style={styles.profilePicture}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.profilePicturePlaceholder}>
+                <Text style={styles.profilePicturePlaceholderText}>
+                  {delivererProfile?.full_name?.charAt(0)?.toUpperCase() || 'D'}
+                </Text>
+              </View>
+            )}
+            <View style={styles.headerInfo}>
+              <Text style={styles.delivererName}>{delivererProfile?.full_name || 'Deliverer'}</Text>
+              <Text style={styles.delivererSubtitle}>
+                {view === 'Available'
+                  ? `${availableOrders.length} available order${availableOrders.length !== 1 ? 's' : ''}`
+                  : `${myDeliveries.length} active deliver${myDeliveries.length !== 1 ? 'ies' : 'y'}`
+                }
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Stats Cards */}
       <View style={styles.statsContainer}>
@@ -371,277 +392,8 @@ export default function DelivererDashboard() {
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: Colors.light.icon,
-    fontWeight: '500',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 60 : 24,
-    paddingBottom: 20,
-    backgroundColor: Colors.light.surface,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
-  },
-  logoutButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: Colors.light.input,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  logoutButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    gap: 12,
-    backgroundColor: Colors.light.surface,
-  },
-  statCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: Colors.light.primaryLight,
-    borderRadius: 12,
-    gap: 12,
-  },
-  statIcon: {
-    fontSize: 32,
-  },
-  statInfo: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    gap: 8,
-    backgroundColor: Colors.light.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: Colors.light.input,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeTab: {
-    backgroundColor: Colors.light.primary,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  activeTabText: {
-    color: '#FFFFFF',
-  },
-  listContent: {
-    padding: 24,
-    paddingBottom: 100,
-  },
-  orderCard: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  orderId: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  orderDate: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusReady: {
-    backgroundColor: Colors.light.successLight,
-  },
-  statusDelivering: {
-    backgroundColor: Colors.light.infoLight,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  statusTextReady: {
-    color: Colors.light.success,
-  },
-  statusTextDelivering: {
-    color: Colors.light.info,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.light.border,
-    marginBottom: 16,
-  },
-  infoRow: {
-    marginBottom: 12,
-  },
-  infoLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  infoValue: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: Colors.light.text,
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.light.primaryLight,
-    borderRadius: 12,
-  },
-  priceLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-  },
-  priceValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.primary,
-  },
-  acceptButton: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  acceptButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  completeButton: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: Colors.light.success,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.light.success,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  completeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 24,
-  },
-  emptyStateIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-});

@@ -1,0 +1,146 @@
+import { StyleSheet } from 'react-native';
+import { Colors } from '../../constants/Colors';
+
+export const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: Colors.light.icon,
+    fontWeight: '500',
+  },
+  header: {
+    padding: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    backgroundColor: Colors.light.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.light.text,
+    letterSpacing: -0.5,
+  },
+  summaryCard: {
+    backgroundColor: Colors.light.surface,
+    marginHorizontal: 20,
+    marginVertical: 16,
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    shadowColor: Colors.light.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  summaryContent: {
+    alignItems: 'center',
+  },
+  averageRating: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 8,
+  },
+  totalRatings: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    fontWeight: '500',
+  },
+  listContent: {
+    padding: 20,
+    paddingTop: 0,
+  },
+  ratingCard: {
+    backgroundColor: Colors.light.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    shadowColor: Colors.light.cardShadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  ratingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  customerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  customerDetails: {
+    flex: 1,
+  },
+  customerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 2,
+  },
+  ratingDate: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+  comment: {
+    fontSize: 14,
+    color: Colors.light.text,
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: Colors.light.icon,
+    textAlign: 'center',
+  },
+});
